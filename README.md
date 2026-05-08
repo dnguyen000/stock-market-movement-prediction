@@ -109,19 +109,6 @@ Standard deviation across folds measures **consistency** — a model with lower 
 
 ## Models
 
-### Regression
-
-All models are evaluated using walk-forward validation across both tickers independently.
-
-#### Models
-Predict the **5-day forward return** — the percentage price change from today's close to the close 5 trading days from now. A positive value means the model expects the price to rise; negative means it expects a decline.
-
-| Model | Purpose | Primary Metric | Supporting Metrics |
-|---|---|---|---|
-| **Linear Regression** | Baseline model. Fits a straight line through the feature space to predict the 5-day return as a weighted sum of inputs. Coefficients reveal which features most influence the prediction. | RMSE | MAE, R² |
-| **Ridge Regression** | Extension of linear regression with L2 regularization — penalizes large coefficients to reduce overfitting. Particularly useful here because technical indicators (RSI, Bollinger Band position, distance from MA) are often correlated with each other. | RMSE | MAE, R² |
-| **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Captures non-linear relationships between features and returns that linear models cannot, and provides feature importance scores. | RMSE | MAE, R² |
-
 ### Classification
 
 All models are evaluated using walk-forward validation across both tickers independently. Standard configuration: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA: train=59d / 58 folds, except Random Forest which uses 189d/55 folds for both tickers).
@@ -137,49 +124,23 @@ Predict the **next-day price direction** — whether the stock's closing price w
 | **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Uses `scale_pos_weight` to handle class imbalance between UP and DOWN days. Provides feature importance scores ranking which technical indicators most influence directional predictions. | F1 Score | Accuracy, Precision, Recall, Specificity |
 | **Voting Ensemble (Hard Vote)** | Combines all four classifiers above using a majority vote rule: a day is predicted UP if at least 2 of 4 models predict UP. Component configurations are chosen to maximize vote diversity rather than individual F1, providing more robust and consistent predictions than any single model. | F1 Score | Accuracy, Precision, Recall, Specificity |
 
----
-
-## Results
 
 ### Regression
 
-Results are reported as **mean ± standard deviation** across all walk-forward folds. For granular per-iteration tables and seasonal breakdowns, see:
-- [SPY Regression Results](results/spy_regression_results.md)
-- [TSLA Regression Results](results/tsla_regression_results.md)
+All models are evaluated using walk-forward validation across both tickers independently.
 
-#### SPY (best model per iteration)
+#### Models
+Predict the **5-day forward return** — the percentage price change from today's close to the close 5 trading days from now. A positive value means the model expects the price to rise; negative means it expects a decline.
 
-| Iteration | Train Window | Best Model | RMSE (mean ± std) | Seasonal R² highlights |
-|---|---|---|---|---|
-| 1 (5-day return target) | 63d | XGBoost | 0.0262 ± 0.0154 | n/a (different target) |
-| **2** | **189d** | **Ridge** | **0.005168 ± 0.004213** | Spring **+0.273**, Fall +0.144, Winter +0.040 |
-| 3 | 3d | XGBoost | 0.002181 ± 0.002797 | All seasons positive (interpolation artifact) |
-| 4 | 15d | XGBoost | 0.004424 ± 0.004333 | Spring **+0.421**, Fall **+0.178** |
-
-#### TSLA (best model per iteration)
-
-| Iteration | Train Window | Best Model | RMSE (mean ± std) | Seasonal R² highlights |
-|---|---|---|---|---|
-| 1 (5-day return target) | 63d | XGBoost | 0.1001 ± 0.0395 | n/a (different target) |
-| 2 | 59d | XGBoost | 0.019849 ± 0.009929 | All negative; best Summer −0.347 |
-| 3 | 3d | XGBoost | 0.008691 ± 0.011084 | All positive (interpolation artifact) |
-| 4 | 15d | XGBoost | 0.016236 ± 0.012345 | Only Spring positive: **+0.228** |
-
-### Key Findings Across All Iterations
-
-1. **Iteration 2 (SPY: 189d window) is the strongest well-founded configuration.** Ridge Regression achieves positive R² in three of four seasons for SPY (Spring +0.273, Fall +0.144, Winter +0.040) — the only non-Iter3 configuration with multi-season positive R².
-
-2. **Ridge Regression outperforms XGBoost for SPY at the 189-day window.** Sufficient history allows L2 regularization to converge to stable coefficients. At shorter windows, XGBoost's non-linearity is a bigger advantage.
-
-3. **Fall is consistently learnable for SPY across all informative iterations** (Iter2 Ridge R²=+0.144, Iter4 XGBoost R²=+0.178), confirming it as a genuine signal period rather than a window artifact.
-
-4. **TSLA regression shows no positive overall R² in Iterations 1, 2, or 4.** Regime shifts (meme-stock 2020–2022, post-election 2024) require longer windows than tested.
-
-5. **Iteration 3 (3d/1d) numbers are misleading.** Models interpolate within a nearly static local window rather than generalizing. The high R² values reflect local fitting, not predictive power.
-
-6. **Linear regression collapses at small training windows.** At 15 samples / 16 features (Iter4), R² averages −3,582 for SPY and −257,532 for TSLA.
+| Model | Purpose | Primary Metric | Supporting Metrics |
+|---|---|---|---|
+| **Linear Regression** | Baseline model. Fits a straight line through the feature space to predict the 5-day return as a weighted sum of inputs. Coefficients reveal which features most influence the prediction. | RMSE | MAE, R² |
+| **Ridge Regression** | Extension of linear regression with L2 regularization — penalizes large coefficients to reduce overfitting. Particularly useful here because technical indicators (RSI, Bollinger Band position, distance from MA) are often correlated with each other. | RMSE | MAE, R² |
+| **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Captures non-linear relationships between features and returns that linear models cannot, and provides feature importance scores. | RMSE | MAE, R² |
 
 ---
+
+## Results
 
 ### Classification
 
@@ -235,7 +196,49 @@ Component models: SVM (C=10, gamma=0.1) + Logistic Regression (C=10, l1) + Rando
 
 ---
 
+### Regression
+
+Results are reported as **mean ± standard deviation** across all walk-forward folds. For granular per-iteration tables and seasonal breakdowns, see:
+- [SPY Regression Results](results/spy_regression_results.md)
+- [TSLA Regression Results](results/tsla_regression_results.md)
+
+#### SPY (best model per iteration)
+
+| Iteration | Train Window | Best Model | RMSE (mean ± std) | Seasonal R² highlights |
+|---|---|---|---|---|
+| 1 (5-day return target) | 63d | XGBoost | 0.0262 ± 0.0154 | n/a (different target) |
+| **2** | **189d** | **Ridge** | **0.005168 ± 0.004213** | Spring **+0.273**, Fall +0.144, Winter +0.040 |
+| 3 | 3d | XGBoost | 0.002181 ± 0.002797 | All seasons positive (interpolation artifact) |
+| 4 | 15d | XGBoost | 0.004424 ± 0.004333 | Spring **+0.421**, Fall **+0.178** |
+
+#### TSLA (best model per iteration)
+
+| Iteration | Train Window | Best Model | RMSE (mean ± std) | Seasonal R² highlights |
+|---|---|---|---|---|
+| 1 (5-day return target) | 63d | XGBoost | 0.1001 ± 0.0395 | n/a (different target) |
+| 2 | 59d | XGBoost | 0.019849 ± 0.009929 | All negative; best Summer −0.347 |
+| 3 | 3d | XGBoost | 0.008691 ± 0.011084 | All positive (interpolation artifact) |
+| 4 | 15d | XGBoost | 0.016236 ± 0.012345 | Only Spring positive: **+0.228** |
+
+### Key Findings Across All Iterations
+
+1. **Iteration 2 (SPY: 189d window) is the strongest well-founded configuration.** Ridge Regression achieves positive R² in three of four seasons for SPY (Spring +0.273, Fall +0.144, Winter +0.040) — the only non-Iter3 configuration with multi-season positive R².
+
+2. **Ridge Regression outperforms XGBoost for SPY at the 189-day window.** Sufficient history allows L2 regularization to converge to stable coefficients. At shorter windows, XGBoost's non-linearity is a bigger advantage.
+
+3. **Fall is consistently learnable for SPY across all informative iterations** (Iter2 Ridge R²=+0.144, Iter4 XGBoost R²=+0.178), confirming it as a genuine signal period rather than a window artifact.
+
+4. **TSLA regression shows no positive overall R² in Iterations 1, 2, or 4.** Regime shifts (meme-stock 2020–2022, post-election 2024) require longer windows than tested.
+
+5. **Iteration 3 (3d/1d) numbers are misleading.** Models interpolate within a nearly static local window rather than generalizing. The high R² values reflect local fitting, not predictive power.
+
+6. **Linear regression collapses at small training windows.** At 15 samples / 16 features (Iter4), R² averages −3,582 for SPY and −257,532 for TSLA.
+
+---
+
 ## Conclusion
+
+### Classificcation
 
 ### Regression
 
