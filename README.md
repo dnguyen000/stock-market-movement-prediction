@@ -109,9 +109,11 @@ Standard deviation across folds measures **consistency** — a model with lower 
 
 ## Models
 
+### Regression
+
 All models are evaluated using walk-forward validation across both tickers independently.
 
-### Regression Models
+#### Models
 Predict the **5-day forward return** — the percentage price change from today's close to the close 5 trading days from now. A positive value means the model expects the price to rise; negative means it expects a decline.
 
 | Model | Purpose | Primary Metric | Supporting Metrics |
@@ -119,15 +121,33 @@ Predict the **5-day forward return** — the percentage price change from today'
 | **Linear Regression** | Baseline model. Fits a straight line through the feature space to predict the 5-day return as a weighted sum of inputs. Coefficients reveal which features most influence the prediction. | RMSE | MAE, R² |
 | **Ridge Regression** | Extension of linear regression with L2 regularization — penalizes large coefficients to reduce overfitting. Particularly useful here because technical indicators (RSI, Bollinger Band position, distance from MA) are often correlated with each other. | RMSE | MAE, R² |
 | **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Captures non-linear relationships between features and returns that linear models cannot, and provides feature importance scores. | RMSE | MAE, R² |
+
+### Classification
+
+All models are evaluated using walk-forward validation across both tickers independently. Standard configuration: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA: train=59d / 58 folds, except Random Forest which uses 189d/55 folds for both tickers).
+
+#### Models
+Predict the **next-day price direction** — whether the stock's closing price will be higher (UP) or lower (DOWN) than the prior day's close.
+
+| Model | Purpose | Primary Metric | Supporting Metrics |
+|---|---|---|---|
+| **Logistic Regression** | Linear baseline classifier. Fits a logistic function to the feature space to output a probability of UP. L1 and L2 regularization are compared via grid search. Provides interpretable coefficients but is limited to linear decision boundaries. | F1 Score | Accuracy, Precision, Recall, Specificity |
+| **Random Forest** | Bagging ensemble of decision trees. Each tree is trained on a bootstrap sample of the training window; majority vote across trees determines the prediction. Captures non-linear interactions between features without requiring explicit kernel specification. | F1 Score | Accuracy, Precision, Recall, Specificity |
+| **Support Vector Machine (SVM)** | Kernel-based classifier using an RBF (radial basis function) kernel. Finds the maximum-margin hyperplane in a high-dimensional feature space, allowing it to capture non-linear boundaries. Regularization strength (C) and kernel width (gamma) are tuned via grid search. | F1 Score | Accuracy, Precision, Recall, Specificity |
+| **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Uses `scale_pos_weight` to handle class imbalance between UP and DOWN days. Provides feature importance scores ranking which technical indicators most influence directional predictions. | F1 Score | Accuracy, Precision, Recall, Specificity |
+| **Voting Ensemble (Hard Vote)** | Combines all four classifiers above using a majority vote rule: a day is predicted UP if at least 2 of 4 models predict UP. Component configurations are chosen to maximize vote diversity rather than individual F1, providing more robust and consistent predictions than any single model. | F1 Score | Accuracy, Precision, Recall, Specificity |
+
 ---
 
 ## Results
+
+### Regression
 
 Results are reported as **mean ± standard deviation** across all walk-forward folds. For granular per-iteration tables and seasonal breakdowns, see:
 - [SPY Regression Results](results/spy_regression_results.md)
 - [TSLA Regression Results](results/tsla_regression_results.md)
 
-### Regression — SPY (best model per iteration)
+#### SPY (best model per iteration)
 
 | Iteration | Train Window | Best Model | RMSE (mean ± std) | Seasonal R² highlights |
 |---|---|---|---|---|
@@ -136,7 +156,7 @@ Results are reported as **mean ± standard deviation** across all walk-forward f
 | 3 | 3d | XGBoost | 0.002181 ± 0.002797 | All seasons positive (interpolation artifact) |
 | 4 | 15d | XGBoost | 0.004424 ± 0.004333 | Spring **+0.421**, Fall **+0.178** |
 
-### Regression — TSLA (best model per iteration)
+#### TSLA (best model per iteration)
 
 | Iteration | Train Window | Best Model | RMSE (mean ± std) | Seasonal R² highlights |
 |---|---|---|---|---|
@@ -161,15 +181,71 @@ Results are reported as **mean ± standard deviation** across all walk-forward f
 
 ---
 
+### Classification
+
+Results are reported as **mean ± standard deviation** across all walk-forward folds. For granular per-model tables, grid search results, and seasonal breakdowns, see:
+- [SPY Classification Results](results/spy_classification_results.md)
+- [TSLA Classification Results](results/tsla_classification_results.md)
+
+Walk-forward config: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA standard: train=59d / 58 folds)
+
+#### Best Model — SPY: Voting Ensemble (Hard Vote)
+
+Component models: SVM (C=100, gamma=0.1) + Logistic Regression (C=0.001, l2) + Random Forest (n_est=200, depth=6, min_leaf=5, sqrt) + XGBoost (n_est=500, depth=4, lr=0.01, subs=0.8)
+
+| Metric | Value |
+|---|---|
+| F1 (UP) | 0.574 ± 0.119 |
+| Accuracy | 0.521 ± 0.091 |
+| Precision (UP) | 0.567 |
+| Recall / Sensitivity (UP) | 0.628 |
+| Specificity (Recall DOWN) | 0.397 |
+
+**Seasonal breakdown:**
+
+| Season | n (test samples) | F1 (UP) |
+|---|---|---|
+| Spring | 575 | 0.577 |
+| Summer | 580 | 0.605 |
+| Fall | 603 | 0.587 |
+| Winter | 552 | 0.591 |
+
+#### Best Model — TSLA: Voting Ensemble (Hard Vote)
+
+Component models: SVM (C=10, gamma=0.1) + Logistic Regression (C=10, l1) + Random Forest (n_est=200, depth=4, min_leaf=10, sqrt) + XGBoost (n_est=100, depth=3, lr=0.01, subs=1.0)
+
+| Metric | Value |
+|---|---|
+| F1 (UP) | 0.545 ± 0.153 |
+| Accuracy | 0.502 ± 0.081 |
+| Precision (UP) | 0.532 |
+| Recall / Sensitivity (UP) | 0.653 |
+| Specificity (Recall DOWN) | 0.361 |
+
+**Seasonal breakdown:**
+
+| Season | n (test samples) | F1 (UP) |
+|---|---|---|
+| Spring | 613 | 0.534 |
+| Summer | 645 | 0.549 |
+| Fall | 630 | 0.608 |
+| Winter | 548 | 0.600 |
+
+### Key Findings Across All Models
+
+---
+
 ## Conclusion
+
+### Regression
 
 This project evaluated four walk-forward configurations across two tickers (SPY, TSLA), two tasks (regression, classification), and three model families (linear, ridge, tree-based) over a 10-year Yahoo Finance dataset (2015–2024). The progression from a 63-day training window with binary targets (Iteration 1) to refined targets and embargo (Iteration 2), and the further experiments with extreme short windows (Iterations 3 and 4), produced a clear and consistent picture.
 
-### What the models can and cannot predict
+#### What the models can and cannot predict
 
 **Realized volatility is learnable; raw return direction is not.** Switching the regression target from 5-day forward return (Iteration 1) to 5-day forward realized volatility (Iterations 2–4) was the single most impactful design decision. The volatility target is directly driven by the technical features already in the model — VIX, daily range, Bollinger Band position, and rolling volatility measures all carry genuine signal about near-term turbulence. Raw return direction is close to a random walk at short horizons; no configuration in any iteration produced positive overall R² for that target.
 
-### What the window experiments revealed
+#### What the window experiments revealed
 
 **Iteration 3 (3d/1d/0d)** produced the best raw numbers — lowest RMSE, all-positive seasonal R² for both tickers. These numbers are misleading: with 3 training samples and 1 test sample, models interpolate within a nearly static local window rather than generalizing. The extremely high R² values (SPY XGBoost Spring: +0.864) reflect local curve-fitting, not predictive power. The configuration is included as a cautionary example of how narrow windows can produce deceptively strong metrics.
 
@@ -177,15 +253,17 @@ This project evaluated four walk-forward configurations across two tickers (SPY,
 
 **Iteration 2 (SPY: 189d/42d/5d embargo, TSLA: 59d/42d/5d embargo)** remains the best overall configuration. SPY's 189-day training window provides roughly 9 months of history per fold — enough for Ridge Regression to outperform XGBoost and achieve positive R² in three of four seasons (Spring +0.273, Fall +0.144, Winter +0.040). The 42-day test window produces stable fold-level metrics with meaningful standard deviations. It is the only configuration where SPY shows multi-season positive R², and the only configuration outside Iteration 3 where both tickers produce consistently interpretable, non-degenerate results across all models.
 
-### The SPY/TSLA divide
+**Post-Presentation (SPY: 159d/42d/5d embargo, TSLA: 120d/42d/5d embargo)** expands the feature set from 18 to 26 by adding eight engineered features: the HAR-RV quarterly extension (rv_65d), four VIX-derived signals (vix_change, vix_lag_1, vix_lag_5, vix_ma20_ratio), return distribution shape features (skew_20, kurt_20), and a volatility regime indicator (vol_regime). Results diverge sharply by ticker. For SPY, the additions are a net improvement but was counterproductive for TSLA
+
+#### The SPY/TSLA divide
 
 Every metric confirms that SPY is more predictable than TSLA across all configurations. SPY's lower volatility, absence of idiosyncratic regime shifts, and cleaner alignment between technical indicators and price behavior makes regression meaningfully learnable in the right conditions. TSLA's meme-stock surge (2020–2022) and post-election spike (2024) introduce regime discontinuities that no 3–63 day training window can anticipate. The features that predict SPY volatility during normal market periods have little explanatory power when TSLA enters one of its structural breaks.
 
-### Model family conclusions
+#### Model family conclusions
 
 **XGBoost is the best regression model for TSLA in every iteration and for SPY at shorter windows (Iter1, 3, 4).** Its combination of tree-based non-linearity and resistance to underdetermined conditions keeps it tractable when Linear Regression collapses catastrophically (R² = −3,582 for SPY, −257,532 for TSLA in Iteration 4). **For SPY at the 189-day window (Iter2), Ridge Regression surpasses XGBoost** (RMSE 0.005168 vs 0.005473; R² −0.991 vs −1.487): sufficient history allows L2 regularization to learn stable patterns that tree ensembles cannot exploit with equal efficiency. Linear Regression without regularization should not be used when training windows approach the feature count.
 
-### Broader takeaway
+#### Broader takeaway
 
-Technical indicators derived from price and volume data provide a genuine but modest signal for predicting near-term volatility in stable, large-cap benchmarks. That signal is consistent across model families and seasons (strongest in Fall) and holds up under rigorous walk-forward validation with embargo. It is not sufficient to reliably predict directional price movement — especially for high-volatility individual stocks. 
+Technical indicators derived from price and volume data provide a genuine but modest signal for predicting near-term volatility in stable, large-cap benchmarks. That signal is consistent across model families and seasons (strongest in Fall) and holds up under walk-forward validation with embargo. It is not sufficient to reliably predict directional price movement — especially for high-volatility individual stocks. The results have reached a near ceiling given the features, the decision to limit the dataset to only metrics from the API and derived values limits the ability to further improve the models. Should this project move further forward, additional feature engineering could help improve the score as well as adding in features such as earnings, sentiment, and executive announcements could improve the prediction for TSLA. 
 
