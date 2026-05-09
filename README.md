@@ -19,6 +19,16 @@ Comparing the two tickers reveals whether stability or volatility makes a stock 
 
 ---
 
+### Tools
+
+- Claude AI: used to:
+  - Help understand stock concepts and terminology
+  - Create a feedback loop on design ideas, clarify logic in code, support/criticize optimization ideas, and validate observations made during the project
+  - Automate documentation of results and clean summarizations of prompted notes taken of model results
+- Class notes: used as reference to validate concepts to be demonstrated in this project
+
+---
+
 ## Data Source
 
 Historical daily stock price data is sourced from the **Yahoo Finance API (yfinance)**. Data spans **10 years** of trading days (2015–2024) for both SPY and TSLA (~2,515 rows each). Each trading day includes the following native attributes:
@@ -238,7 +248,7 @@ Results are reported as **mean ± standard deviation** across all walk-forward f
 
 ## Conclusion
 
-### Classificcation
+### Classification
 
 ### Regression
 
@@ -268,5 +278,4 @@ Every metric confirms that SPY is more predictable than TSLA across all configur
 
 #### Broader takeaway
 
-Technical indicators derived from price and volume data provide a genuine but modest signal for predicting near-term volatility in stable, large-cap benchmarks. That signal is consistent across model families and seasons (strongest in Fall) and holds up under walk-forward validation with embargo. It is not sufficient to reliably predict directional price movement — especially for high-volatility individual stocks. The results have reached a near ceiling given the features, the decision to limit the dataset to only metrics from the API and derived values limits the ability to further improve the models. Should this project move further forward, additional feature engineering could help improve the score as well as adding in features such as earnings, sentiment, and executive announcements could improve the prediction for TSLA. 
-
+Features created from price and volume data did provide enough of a signal for predicting near-term volatility for a stable ticker, but unfortunately was not able to replicate the same behavior for a more volatile one. That signal is consistent across model families and seasons (strongest in Fall) and holds up under walk-forward validation with embargo. The features were not strong enough to predict directional price movement — especially for high-volatility individual stocks. The results have reached a near ceiling given the features, the decision to limit the dataset to only metrics from the API and derived values limits the ability to further improve the models. Should this project move further forward, additional feature engineering could help improve the score as well as adding in features such as earnings, sentiment, and executive announcements could improve the prediction for TSLA.
