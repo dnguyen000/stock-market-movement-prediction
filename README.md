@@ -69,8 +69,9 @@ From these attributes, additional features are derived (see Key Terms below).
 | **SPY** | The SPDR S&P 500 ETF Trust. Tracks the S&P 500 index, representing 500 large U.S. companies. Used here as a stable market benchmark. |
 | **TSLA** | Tesla, Inc. A high-growth, high-volatility individual stock used here as a contrast to SPY. |
 
-**Note**: 
-When considering the data sources, we made the decision to keep the dataset within what is provided through the API and creating derived values from those standard values. This was to ensure we stayed within the timeline of the project and could deliver a finished product. 
+**Note**:
+When considering the data sources, we made the decision to keep the dataset within what is provided through the API and creating derived values from those standard values. This was to ensure we stayed within the timeline of the project and could deliver a finished product.
+
 ---
 
 ## How Testing Is Done
@@ -88,20 +89,10 @@ Testing uses **walk-forward validation** — a time-series aware evaluation stra
 
 Iteration 2 is the primary production configuration. Iterations 3 and 4 explore the effect of shorter windows and are included as cautionary comparisons.
 
+> **Note on scope:** All classification experiments were conducted under Iteration 2 only (SPY 189d / TSLA 59d, 42d test, 5d embargo). Iterations 1, 3, and 4 apply to the regression experiments — see the Regression section.
+
 ### Process
 Each fold trains the model exclusively on its training window, then predicts the immediately following test window. An embargo separates the two to prevent feature leakage from rolling window calculations. The next fold begins immediately after the previous test window ends:
-
-```
-Iteration 2 example (63d/21d/5d):
-Fold 1: Train [day 1   → day 63],  Embargo [day 64–68],  Test [day 69  → day 89]
-Fold 2: Train [day 69  → day 131], Embargo [day 132–136], Test [day 137 → day 157]
-...
-
-Iteration 4 example (15d/5d/2d):
-Fold 1: Train [day 1  → day 15],  Embargo [day 16–17],  Test [day 18 → day 22]
-Fold 2: Train [day 6  → day 20],  Embargo [day 21–22],  Test [day 23 → day 27]
-...
-```
 
 This approach captures performance across multiple market conditions rather than a single arbitrary split.
 
@@ -111,7 +102,7 @@ Results are aggregated as **mean ± standard deviation** across all folds.
 | Task | Primary Metric | Supporting Metrics |
 |---|---|---|
 | Regression | RMSE | MAE, R² |
-| Classification | F1 Score | Accuracy, Confusion Matrix |
+| Classification | F1 Score | Accuracy, Precision, Recall, Specificity, Confusion Matrix |
 
 Standard deviation across folds measures **consistency** — a model with lower std is more reliable across different market conditions.
 
@@ -121,7 +112,9 @@ Standard deviation across folds measures **consistency** — a model with lower 
 
 ### Classification
 
-All models are evaluated using walk-forward validation across both tickers independently. Standard configuration: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA: train=59d / 58 folds, except Random Forest which uses 189d/55 folds for both tickers).
+All classification models use a shared feature set of **19 engineered features** derived from price, volume, momentum, volatility, and market-stress signals. Each model is evaluated with walk-forward validation using `class_weight='balanced'` to mitigate the natural imbalance between UP and DOWN days. Features are standardized via `StandardScaler` fit inside each training fold only (the scaler is never fit on test data). All models use `random_state=42` for reproducibility. SVM additionally enables `probability=True` for probability calibration.
+
+Standard configuration: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA: train=59d / 58 folds, except Random Forest which uses 189d/55 folds for both tickers).
 
 #### Models
 Predict the **next-day price direction** — whether the stock's closing price will be higher (UP) or lower (DOWN) than the prior day's close.
@@ -132,7 +125,9 @@ Predict the **next-day price direction** — whether the stock's closing price w
 | **Random Forest** | Bagging ensemble of decision trees. Each tree is trained on a bootstrap sample of the training window; majority vote across trees determines the prediction. Captures non-linear interactions between features without requiring explicit kernel specification. | F1 Score | Accuracy, Precision, Recall, Specificity |
 | **Support Vector Machine (SVM)** | Kernel-based classifier using an RBF (radial basis function) kernel. Finds the maximum-margin hyperplane in a high-dimensional feature space, allowing it to capture non-linear boundaries. Regularization strength (C) and kernel width (gamma) are tuned via grid search. | F1 Score | Accuracy, Precision, Recall, Specificity |
 | **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Uses `scale_pos_weight` to handle class imbalance between UP and DOWN days. Provides feature importance scores ranking which technical indicators most influence directional predictions. | F1 Score | Accuracy, Precision, Recall, Specificity |
-| **Voting Ensemble (Hard Vote)** | Combines all four classifiers above using a majority vote rule: a day is predicted UP if at least 2 of 4 models predict UP. Component configurations are chosen to maximize vote diversity rather than individual F1, providing more robust and consistent predictions than any single model. | F1 Score | Accuracy, Precision, Recall, Specificity |
+| **Voting Ensemble (Hard Vote)** | Combines all four classifiers above using a majority vote rule. Two voting thresholds are evaluated: a loose rule (≥ 2 of 4 models predict UP) and a strict rule (≥ 3 of 4 models predict UP). Component configurations are chosen to maximize vote diversity rather than individual F1, providing more robust and consistent predictions than any single model. | F1 Score | Accuracy, Precision, Recall, Specificity |
+
+**Exploratory variants.** Four notebooks (`rf-Copy1_with_17_features.ipynb`, `rf-tsla-Copy1_with_17_features.ipynb`, `xboost_spy-Copy1_witth_17_features.ipynb`, `xboost_tsla-Copy1_with_17_features.ipynb`) test reduced 16-feature variants (dropping `month`, `is_earnings_week`, `is_major_event`) to assess whether trimming low-importance features improves performance. Results were within fold-level noise of the canonical 19-feature models, so the trimmed variants were not used in final reporting. These notebooks are retained for reference but are not part of the production pipeline.
 
 
 ### Regression
@@ -164,15 +159,25 @@ Walk-forward config: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA sta
 
 Component models: SVM (C=100, gamma=0.1) + Logistic Regression (C=0.001, l2) + Random Forest (n_est=200, depth=6, min_leaf=5, sqrt) + XGBoost (n_est=500, depth=4, lr=0.01, subs=0.8)
 
-| Metric | Value |
-|---|---|
-| F1 (UP) | 0.574 ± 0.119 |
-| Accuracy | 0.521 ± 0.091 |
-| Precision (UP) | 0.567 |
-| Recall / Sensitivity (UP) | 0.628 |
-| Specificity (Recall DOWN) | 0.397 |
+We tested two majority-voting rules to evaluate how the decision threshold affects class balance:
 
-**Seasonal breakdown:**
+- **Loose majority (≥ 2 of 4 models predict UP)** — predicts UP whenever any two models agree
+- **Strict majority (≥ 3 of 4 models predict UP)** — predicts UP only with broader consensus
+
+| Metric | Loose (≥ 2 of 4) | Strict (≥ 3 of 4) |
+|---|---|---|
+| Accuracy | 0.521 ± 0.091 | 0.504 ± 0.079 |
+| F1 (UP) | 0.574 ± 0.119 | 0.478 ± 0.152 |
+| Precision (UP) | 0.567 | 0.568 |
+| Recall (UP) | 0.628 | 0.463 |
+| Specificity (DOWN) | 0.397 | 0.560 |
+| Macro F1 | 0.51 | 0.50 |
+
+**Interpretation.** The loose rule produces a higher F1 but achieves it by predicting UP more often — catching more actual UP days (recall 0.628) at the cost of missing DOWN days (specificity 0.397). The strict rule is the mirror image: predicts UP less often, catches more DOWN days (specificity 0.560), at the cost of UP recall (0.463). Precision is essentially identical (0.567 vs 0.568) — when either rule says UP, it is correct equally often. Macro-averaged F1 (which treats both classes equally) is functionally identical between the two rules (~0.50), confirming that the two configurations sit at the same overall predictive ceiling and differ only in **which class absorbs the errors**.
+
+This is a concrete example of why single-class F1 is misleading on imbalanced targets: the same underlying model can produce F1 of 0.574 or 0.478 depending on a single threshold choice, without any change in actual predictive ability. We retain the loose rule (≥ 2) as our reported "best F1" configuration for consistency with the primary metric, but the strict rule is the more honest representation of the model's balanced classification capability.
+
+**Seasonal breakdown (loose rule, ≥ 2 of 4):**
 
 | Season | n (test samples) | F1 (UP) |
 |---|---|---|
@@ -202,7 +207,19 @@ Component models: SVM (C=10, gamma=0.1) + Logistic Regression (C=10, l1) + Rando
 | Fall | 630 | 0.608 |
 | Winter | 548 | 0.600 |
 
-### Key Findings Across All Models
+> **Note on class balance.** TSLA shows the same asymmetric pattern as SPY but more pronounced: UP recall 0.653, DOWN recall 0.361. Per-fold analysis (visible in `svm_tsla.ipynb`) shows the SVM frequently collapses to predicting a single class for an entire 42-day test window — alternating between "predict UP for all 42 days" and "predict DOWN for all 42 days" depending on the training slice. Probability distributions for actual UP vs. actual DOWN days overlap almost entirely (mean P(UP) = 0.523 on UP days, 0.519 on DOWN days), indicating the model cannot reliably distinguish the two classes from the available technical features. The reported F1 reflects this bias and should not be read as evidence of balanced classification ability.
+
+### Key Findings Across Classification Models
+
+1. **F1 alone is misleading on this target.** Across all four base models and both tickers, the highest-F1 configurations achieve their scores by biasing predictions toward the UP class. The clearest demonstration is the voting-rule comparison on SPY: switching the ensemble from ≥ 2 of 4 to ≥ 3 of 4 changes F1 from 0.574 to 0.478, recall from 0.628 to 0.463, and specificity from 0.397 to 0.560 — while macro F1 (~0.50) and precision (0.567) remain essentially unchanged. The same underlying model produces dramatically different F1 numbers depending on a single threshold, confirming that F1 reflects class bias as much as it reflects classification ability on this target. Grid search results for individual models showed the same pattern: SPY SVM's best F1 (0.61) came from a configuration with specificity 0.19, while macro F1 was actually lower than the baseline.
+
+2. **SPY is more predictable than TSLA but only marginally.** SPY accuracy 0.52 vs TSLA accuracy 0.50. The gap is real but small — well within published ceilings for daily direction prediction on liquid equities (52–55%).
+
+3. **Per-fold variance dominates the picture.** F1 standard deviations of ±0.12 (SPY) and ±0.15 (TSLA) across folds are large relative to the mean F1 itself. Individual folds range from near-zero F1 to F1 above 0.75. This reflects market regime shifts more than model instability — the same model produces very different results in trending vs. choppy market periods.
+
+4. **Seasonal performance is consistent.** F1 across Spring/Summer/Fall/Winter is within 0.03 for SPY and 0.07 for TSLA, indicating no strong seasonal effect dominates the model's behavior. Differences are within fold-level noise.
+
+5. **Methodology limitation — hyperparameter selection bias.** Grid search for each base model was conducted across the same walk-forward folds later used for final evaluation. The best hyperparameter configuration was selected based on its mean F1 across those folds. This is a form of selection bias: the reported best-model metrics are optimistic relative to what an unbiased held-out test would show. A nested cross-validation scheme (selecting hyperparameters on inner folds, evaluating on outer folds) would address this but was not implemented due to scope constraints. The magnitude of this bias is likely modest — most grid configurations produced F1 within 0.02–0.05 of each other on a given ticker, suggesting model performance is not highly sensitive to specific hyperparameter choices in this region of the search space.
 
 ---
 
@@ -250,6 +267,12 @@ Results are reported as **mean ± standard deviation** across all walk-forward f
 
 ### Classification
 
+Daily direction classification on both SPY and TSLA performed near the published ceiling for this problem (~52% accuracy for liquid equities, near chance for individual volatile stocks). The Voting Ensemble outperformed all single models on F1 — but as documented in the per-ticker class-balance notes, F1 gains are partly attributable to the model biasing toward the UP majority class. Macro F1 paints a more conservative picture and is closer to balanced-accuracy levels around 0.49–0.50 for both tickers.
+
+The most important finding from the classification track is not the F1 number itself but **what the model's behavior reveals about the target**: per-fold analysis showed the SVM frequently collapsing to single-class predictions per 42-day window, and probability distributions for actual UP vs. actual DOWN days overlap almost entirely. This is consistent with daily equity direction being a noise-dominated signal that traditional ML on technical features cannot meaningfully separate. The features carry information — but not enough to push prediction beyond the ~52% boundary that decades of research have established for this problem.
+
+A breakthrough would require categorically different signal: sentiment data, options market data (implied volatility surfaces, put/call ratios), order flow, or macroeconomic factors. These were out of scope for this project given the timeline and the decision to limit inputs to what is available through the Yahoo Finance API and derived features.
+
 ### Regression
 
 This project evaluated four walk-forward configurations across two tickers (SPY, TSLA), two tasks (regression, classification), and three model families (linear, ridge, tree-based) over a 10-year Yahoo Finance dataset (2015–2024). The progression from a 63-day training window with binary targets (Iteration 1) to refined targets and embargo (Iteration 2), and the further experiments with extreme short windows (Iterations 3 and 4), produced a clear and consistent picture.
@@ -278,4 +301,4 @@ Every metric confirms that SPY is more predictable than TSLA across all configur
 
 #### Broader takeaway
 
-Features created from price and volume data did provide enough of a signal for predicting near-term volatility for a stable ticker, but unfortunately was not able to replicate the same behavior for a more volatile one. That signal is consistent across model families and seasons (strongest in Fall) and holds up under walk-forward validation with embargo. The features were not strong enough to predict directional price movement — especially for high-volatility individual stocks. The results have reached a near ceiling given the features, the decision to limit the dataset to only metrics from the API and derived values limits the ability to further improve the models. Should this project move further forward, additional feature engineering could help improve the score as well as adding in features such as earnings, sentiment, and executive announcements could improve the prediction for TSLA.
+Features created from price and volume data did provide enough of a signal for predicting near-term volatility for a stable ticker, but unfortunately was not able to replicate the same behavior for a more volatile one. That signal is consistent across model families and seasons (strongest in Fall) and holds up under walk-forward validation with embargo. The features were not strong enough to predict directional price movement — especially for high-volatility individual stocks. The results have reached a near ceiling given the features, the decision to limit the dataset to only metrics from the API and derived values limits the ability to further improve the models. Should this project move further forward, additional feature engineering could help improve the score and adding in features such as earnings, sentiment, and executive announcements could improve the prediction for TSLA.
