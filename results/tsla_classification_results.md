@@ -15,7 +15,7 @@ Aggregate metrics (Precision, Recall, Specificity) are computed over all out-of-
 ## Walk-Forward Setup
 Each model is trained on a rolling 59-day window and tested on the next 42 days with a 5-day embargo to prevent leakage from overlapping features.
 
-This configuration is intentionally short to test responsiveness to TSLA’s rapidly shifting regimes (meme-stock phase, post-2022 correction, 2024 volatility spikes).
+This configuration is intentionally short to test responsiveness to TSLA's rapidly shifting regimes (meme-stock phase, post-2022 correction, 2024 volatility spikes).
 
 ---
 
@@ -77,8 +77,7 @@ Walk-forward config: 59d / 42d / 5d — 58 folds
 
 # 3. Random Forest
 
-Walk-forward config: 189d / 42d / 5d — 55 folds  
-*(Note: longer training window than other TSLA models)*
+Walk-forward config: 59d / 42d / 5d — 58 folds
 
 ## Baseline
 
@@ -184,11 +183,11 @@ Voting rule:
 
 | Metric | Value |
 |---|---|
-| F1 | 0.545 ± 0.153 |
-| Accuracy | 0.502 ± 0.081 |
-| Precision (UP) | 0.532 |
-| Recall (UP) | 0.653 |
-| Specificity | 0.361 |
+| F1 | 0.541 ± 0.163 |
+| Accuracy | 0.503 ± 0.083 |
+| Precision (UP) | 0.536 |
+| Recall (UP) | 0.652 |
+| Specificity | 0.365 |
 
 ---
 
@@ -196,23 +195,23 @@ Voting rule:
 
 | Season | F1 |
 |---|---|
-| Spring | 0.534 |
-| Summer | 0.549 |
-| Fall | 0.608 |
-| Winter | 0.600 |
+| Spring | 0.538 |
+| Summer | 0.543 |
+| Fall | 0.610 |
+| Winter | 0.596 |
 
 ---
 
 ## Key Findings
 
 ### 1. Best Overall Model
-The ensemble is the strongest TSLA classifier (F1=0.545), outperforming all individual models.
+The ensemble is the strongest TSLA classifier (F1=0.541), outperforming all individual models.
 
 ### 2. Largest Ensemble Gain in Project
-Improvement from ~0.47–0.49 (individual models) → 0.545 (ensemble) is the largest relative gain across SPY and TSLA.
+Improvement from ~0.47–0.49 (individual models) → 0.541 (ensemble) is the largest relative gain across SPY and TSLA.
 
 ### 3. Strong Seasonal Signal in Q4
-Fall (0.608) and Winter (0.600) show significantly stronger predictability than Spring/Summer.
+Fall (0.610) and Winter (0.596) show stronger predictability than Spring/Summer.
 
 This suggests:
 - institutional rebalancing effects
@@ -220,13 +219,13 @@ This suggests:
 - stronger momentum persistence
 
 ### 4. High Recall / Low Specificity Tradeoff
-- Recall: 0.653 (UP-heavy bias)
-- Specificity: 0.361 (weak DOWN detection)
+- Recall: 0.652 (UP-heavy bias)
+- Specificity: 0.365 (weak DOWN detection)
 
 The ensemble is more reliable for identifying upward moves than downward corrections.
 
 ### 5. Regime Instability Dominates Learning
-TSLA variance (±0.153–0.211) remains high across all models, confirming:
+TSLA variance (±0.163–0.211) remains high across all models, confirming:
 
 - unstable feature-target relationships
 - frequent structural breaks
@@ -242,7 +241,7 @@ Grid search improvements are minimal (≤0.02–0.03 F1), indicating:
 
 | Property | SPY | TSLA |
 |---|---|---|
-| Best F1 | 0.574 | 0.545 |
+| Best F1 | 0.574 | 0.541 |
 | Stability | Higher | Lower |
 | Regime shifts | Mild | Severe |
 | Learnability | Moderate | Weak–Moderate |
