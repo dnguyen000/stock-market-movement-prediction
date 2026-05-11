@@ -116,7 +116,18 @@ All classification models use a shared feature set of **19 engineered features**
 
 Standard configuration: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA: train=59d / 58 folds, except Random Forest which uses 189d/55 folds for both tickers).
 
+#### Hyperparameter Selection Workflow (Three-Way Comparison)
+
+For every base model on every ticker, we ran a three-way comparison rather than picking the grid search winner outright:
+
+1. **Baseline** — an initial reasonable hyperparameter choice, used as a reference point before any tuning.
+2. **Best F1 (grid search winner)** — the configuration with the highest mean F1 across walk-forward folds.
+3. **Balanced** — a separately chosen configuration that traded some F1 in exchange for meaningfully higher specificity, addressing the class-bias issue described in the Key Findings below.
+
+This workflow was adopted after the first grid search (SPY SVM) revealed that the best-F1 configurations consistently achieved their scores by biasing predictions toward the UP class. For example, SPY SVM's best-F1 grid point (C=1, γ=1) reached F1 = 0.608 with specificity of only 0.189 — catching 82% of UP days but missing 81% of DOWN days. The balanced configuration sacrifices a few points of F1 to keep specificity in the 0.45–0.50 range, producing a more honest classifier. Voting ensemble components were chosen from the balanced configurations, except where the F1 vs. balanced trade-off was negligible (e.g., TSLA Logistic Regression, where we kept the slightly higher-F1 L1 variant).
+
 #### Models
+
 Predict the **next-day price direction** — whether the stock's closing price will be higher (UP) or lower (DOWN) than the prior day's close.
 
 | Model | Purpose | Primary Metric | Supporting Metrics |
@@ -125,9 +136,9 @@ Predict the **next-day price direction** — whether the stock's closing price w
 | **Random Forest** | Bagging ensemble of decision trees. Each tree is trained on a bootstrap sample of the training window; majority vote across trees determines the prediction. Captures non-linear interactions between features without requiring explicit kernel specification. | F1 Score | Accuracy, Precision, Recall, Specificity |
 | **Support Vector Machine (SVM)** | Kernel-based classifier using an RBF (radial basis function) kernel. Finds the maximum-margin hyperplane in a high-dimensional feature space, allowing it to capture non-linear boundaries. Regularization strength (C) and kernel width (gamma) are tuned via grid search. | F1 Score | Accuracy, Precision, Recall, Specificity |
 | **XGBoost** | Gradient boosting ensemble that builds decision trees sequentially, each correcting the residual errors of the prior tree. Uses `scale_pos_weight` to handle class imbalance between UP and DOWN days. Provides feature importance scores ranking which technical indicators most influence directional predictions. | F1 Score | Accuracy, Precision, Recall, Specificity |
-| **Voting Ensemble (Hard Vote)** | Combines all four classifiers above using a majority vote rule. Two voting thresholds are evaluated: a loose rule (≥ 2 of 4 models predict UP) and a strict rule (≥ 3 of 4 models predict UP). Component configurations are chosen to maximize vote diversity rather than individual F1, providing more robust and consistent predictions than any single model. | F1 Score | Accuracy, Precision, Recall, Specificity |
+| **Voting Ensemble (Hard Vote)** | Combines all four classifiers above using a hard majority vote. Components are drawn from the balanced configurations identified by the three-way comparison workflow. Two tie-breaking thresholds are evaluated: ≥2 of 4 (tie breaks toward UP) and ≥3 of 4 (tie breaks toward DOWN). | F1 Score | Accuracy, Precision, Recall, Specificity |
 
-**Exploratory variants.** Four notebooks (`rf-Copy1_with_17_features.ipynb`, `rf-tsla-Copy1_with_17_features.ipynb`, `xboost_spy-Copy1_witth_17_features.ipynb`, `xboost_tsla-Copy1_with_17_features.ipynb`) test reduced 16-feature variants (dropping `month`, `is_earnings_week`, `is_major_event`) to assess whether trimming low-importance features improves performance. Results were within fold-level noise of the canonical 19-feature models, so the trimmed variants were not used in final reporting. These notebooks are retained for reference but are not part of the production pipeline.
+**Exploratory variants.** Four notebooks (`rf-Copy1_with_17_features.ipynb`, `rf-tsla-Copy1_with_17_features.ipynb`, `xboost_spy-Copy1_witth_17_features.ipynb`, `xboost_tsla-Copy1_with_17_features.ipynb`) test reduced 16-feature variants (dropping `month`, `is_earnings_week`, `is_major_event`) to assess whether trimming low-importance features improves performance. Results were within fold-level noise of the canonical 19-feature models, so the trimmed variants were not used in final reporting. These notebooks are retained for reference in `classification/exploratory/` but are not part of the production pipeline.
 
 
 ### Regression
@@ -157,14 +168,23 @@ Walk-forward config: train=189d / test=42d / embargo=5d (SPY: 55 folds; TSLA sta
 
 #### Best Model — SPY: Voting Ensemble (Hard Vote)
 
-Component models: SVM (C=100, gamma=0.1) + Logistic Regression (C=0.001, l2) + Random Forest (n_est=200, depth=6, min_leaf=5, sqrt) + XGBoost (n_est=500, depth=4, lr=0.01, subs=0.8)
+Ensemble components were chosen via the three-way comparison workflow described in the Models section above. For SPY, all four components are drawn from the **balanced** configurations:
 
-We tested two majority-voting rules to evaluate how the decision threshold affects class balance:
+| Model | Selected Config | Source |
+|---|---|---|
+| SVM | C=100, γ=0.1 | Balanced |
+| Logistic Regression | C=0.001, L2 | Balanced |
+| Random Forest | n_est=200, depth=6, min_leaf=5, sqrt | Balanced |
+| XGBoost | n_est=500, depth=4, lr=0.01, subsample=0.8 | Balanced |
 
-- **Loose majority (≥ 2 of 4 models predict UP)** — predicts UP whenever any two models agree
-- **Strict majority (≥ 3 of 4 models predict UP)** — predicts UP only with broader consensus
+##### Tie-breaking sensitivity
 
-| Metric | Loose (≥ 2 of 4) | Strict (≥ 3 of 4) |
+The ensemble uses a hard majority vote across 4 models. With 4 models, ties (2 UP / 2 DOWN) are possible. We evaluated two tie-breaking rules:
+
+- **≥ 2 of 4 (tie → UP):** predict UP whenever any two models agree
+- **≥ 3 of 4 (tie → DOWN):** predict UP only when three or more models agree
+
+| Metric | Tie → UP (≥ 2 of 4) | Tie → DOWN (≥ 3 of 4) |
 |---|---|---|
 | Accuracy | 0.521 ± 0.091 | 0.504 ± 0.079 |
 | F1 (UP) | 0.574 ± 0.119 | 0.478 ± 0.152 |
@@ -173,11 +193,11 @@ We tested two majority-voting rules to evaluate how the decision threshold affec
 | Specificity (DOWN) | 0.397 | 0.560 |
 | Macro F1 | 0.51 | 0.50 |
 
-**Interpretation.** The loose rule produces a higher F1 but achieves it by predicting UP more often — catching more actual UP days (recall 0.628) at the cost of missing DOWN days (specificity 0.397). The strict rule is the mirror image: predicts UP less often, catches more DOWN days (specificity 0.560), at the cost of UP recall (0.463). Precision is essentially identical (0.567 vs 0.568) — when either rule says UP, it is correct equally often. Macro-averaged F1 (which treats both classes equally) is functionally identical between the two rules (~0.50), confirming that the two configurations sit at the same overall predictive ceiling and differ only in **which class absorbs the errors**.
+**Interpretation.** The "tie → UP" rule produces a higher F1 by predicting UP more often — catching more actual UP days (recall 0.628) at the cost of missing DOWN days (specificity 0.397). The "tie → DOWN" rule is the mirror image: predicts UP less often, catches more DOWN days (specificity 0.560), at the cost of UP recall (0.463). Precision is essentially identical (0.567 vs 0.568) — when either rule says UP, it is correct equally often. Macro F1 is functionally identical between the two rules (~0.50), confirming that the two configurations sit at the same overall predictive ceiling and differ only in **which class absorbs the errors**.
 
-This is a concrete example of why single-class F1 is misleading on imbalanced targets: the same underlying model can produce F1 of 0.574 or 0.478 depending on a single threshold choice, without any change in actual predictive ability. We retain the loose rule (≥ 2) as our reported "best F1" configuration for consistency with the primary metric, but the strict rule is the more honest representation of the model's balanced classification capability.
+This independently reproduces the class-bias pattern seen at the per-model grid search level: the same underlying model can produce F1 of 0.574 or 0.478 depending on a single tie-breaking choice, without any change in actual predictive ability. We report the "tie → UP" rule as the primary best-F1 configuration for consistency with the headline metric, while noting the "tie → DOWN" rule reflects the model's balanced classification capability more honestly.
 
-**Seasonal breakdown (loose rule, ≥ 2 of 4):**
+**Seasonal breakdown (tie → UP):**
 
 | Season | n (test samples) | F1 (UP) |
 |---|---|---|
@@ -188,7 +208,16 @@ This is a concrete example of why single-class F1 is misleading on imbalanced ta
 
 #### Best Model — TSLA: Voting Ensemble (Hard Vote)
 
-Component models: SVM (C=10, gamma=0.1) + Logistic Regression (C=10, l1) + Random Forest (n_est=200, depth=4, min_leaf=10, sqrt) + XGBoost (n_est=100, depth=3, lr=0.01, subs=1.0)
+Ensemble components follow the same three-way comparison workflow. For TSLA, three components are drawn from the balanced configurations; Logistic Regression uses the Best F1 variant because the F1 vs. balanced trade-off was negligible at that model:
+
+| Model | Selected Config | Source |
+|---|---|---|
+| SVM | C=10, γ=0.1 | Baseline (no grid F1 improvement over baseline) |
+| Logistic Regression | C=10, L1 | Best F1 |
+| Random Forest | n_est=200, depth=4, min_leaf=10, sqrt | Balanced |
+| XGBoost | n_est=100, depth=3, lr=0.01, subsample=1.0 | Balanced |
+
+##### Performance (tie → UP, ≥ 2 of 4)
 
 | Metric | Value |
 |---|---|
@@ -211,15 +240,17 @@ Component models: SVM (C=10, gamma=0.1) + Logistic Regression (C=10, l1) + Rando
 
 ### Key Findings Across Classification Models
 
-1. **F1 alone is misleading on this target.** Across all four base models and both tickers, the highest-F1 configurations achieve their scores by biasing predictions toward the UP class. The clearest demonstration is the voting-rule comparison on SPY: switching the ensemble from ≥ 2 of 4 to ≥ 3 of 4 changes F1 from 0.574 to 0.478, recall from 0.628 to 0.463, and specificity from 0.397 to 0.560 — while macro F1 (~0.50) and precision (0.567) remain essentially unchanged. The same underlying model produces dramatically different F1 numbers depending on a single threshold, confirming that F1 reflects class bias as much as it reflects classification ability on this target. Grid search results for individual models showed the same pattern: SPY SVM's best F1 (0.61) came from a configuration with specificity 0.19, while macro F1 was actually lower than the baseline.
+1. **The F1 trap was visible from the first grid search and shaped every subsequent decision.** Across all four base models on both tickers, the highest-F1 configurations from grid search consistently achieved their scores by biasing predictions toward the UP class. The most extreme example: SPY SVM's best-F1 config (C=1, γ=1) hit F1 = 0.608 but with specificity of only 0.189 — meaning the model caught 82% of UP days but only 19% of DOWN days. To handle this, we adopted a **three-way comparison** workflow for every model: (a) an initial baseline hyperparameter choice, (b) the grid search winner by F1, and (c) a separately chosen "balanced" configuration that traded some F1 for meaningfully higher specificity. Component models for the voting ensemble were then selected from these balanced configurations (or, where the F1 vs balanced trade-off was small, the better F1 option), not from the raw F1 winners.
 
-2. **SPY is more predictable than TSLA but only marginally.** SPY accuracy 0.52 vs TSLA accuracy 0.50. The gap is real but small — well within published ceilings for daily direction prediction on liquid equities (52–55%).
+2. **The voting ensemble's tie-breaking rule independently confirms the F1 trap.** On SPY, switching the voting threshold from ≥ 2 of 4 (tie → UP) to ≥ 3 of 4 (tie → DOWN) changes F1 from 0.574 to 0.478, recall from 0.628 to 0.463, and specificity from 0.397 to 0.560 — while macro F1 (~0.50) and precision (0.567) remain essentially unchanged. The same ensemble produces dramatically different F1 numbers depending on a single threshold, with no underlying change in classification ability. This makes the F1 trap concretely demonstrable end-to-end: it shows up at the per-model level (grid search), at the ensemble level (voting threshold), and both at the same magnitude.
 
-3. **Per-fold variance dominates the picture.** F1 standard deviations of ±0.12 (SPY) and ±0.15 (TSLA) across folds are large relative to the mean F1 itself. Individual folds range from near-zero F1 to F1 above 0.75. This reflects market regime shifts more than model instability — the same model produces very different results in trending vs. choppy market periods.
+3. **SPY is more predictable than TSLA but only marginally.** All four models landed in the 48–53% accuracy range for both tickers, with F1 between 0.46 and 0.57. SPY's voting ensemble F1 = 0.574 vs TSLA's 0.545 — a real but small gap, well within the published ceiling for daily direction prediction on liquid equities (52–55%). Tree-based models (RF, XGBoost) slightly outperformed linear models (LR, SVM) on average, but no single model dominated across both tickers.
 
-4. **Seasonal performance is consistent.** F1 across Spring/Summer/Fall/Winter is within 0.03 for SPY and 0.07 for TSLA, indicating no strong seasonal effect dominates the model's behavior. Differences are within fold-level noise.
+4. **Per-fold variance dominates the picture.** F1 standard deviations of ±0.12 (SPY) and ±0.15 (TSLA) across folds are large relative to the mean F1 itself. Individual folds range from near-zero F1 to F1 above 0.75. This reflects market regime shifts more than model instability — the same model produces very different results in trending vs. choppy market periods.
 
-5. **Methodology limitation — hyperparameter selection bias.** Grid search for each base model was conducted across the same walk-forward folds later used for final evaluation. The best hyperparameter configuration was selected based on its mean F1 across those folds. This is a form of selection bias: the reported best-model metrics are optimistic relative to what an unbiased held-out test would show. A nested cross-validation scheme (selecting hyperparameters on inner folds, evaluating on outer folds) would address this but was not implemented due to scope constraints. The magnitude of this bias is likely modest — most grid configurations produced F1 within 0.02–0.05 of each other on a given ticker, suggesting model performance is not highly sensitive to specific hyperparameter choices in this region of the search space.
+5. **Seasonal performance is consistent.** F1 across Spring/Summer/Fall/Winter is within 0.03 for SPY and 0.07 for TSLA, indicating no strong seasonal effect dominates the model's behavior. Differences are within fold-level noise.
+
+6. **Methodology limitation — hyperparameter selection bias.** Grid search for each base model was conducted across the same walk-forward folds later used for final evaluation. Both the F1-winner and balanced configurations were selected based on their mean metrics across those folds. This is a form of selection bias: the reported best-model metrics are optimistic relative to what an unbiased held-out test would show. A nested cross-validation scheme (selecting hyperparameters on inner folds, evaluating on outer folds) would address this but was not implemented due to scope constraints. The magnitude of this bias is likely modest — most grid configurations produced F1 within 0.02–0.05 of each other on a given ticker, suggesting model performance is not highly sensitive to specific hyperparameter choices in this region of the search space.
 
 ---
 
@@ -269,7 +300,9 @@ Results are reported as **mean ± standard deviation** across all walk-forward f
 
 Daily direction classification on both SPY and TSLA performed near the published ceiling for this problem (~52% accuracy for liquid equities, near chance for individual volatile stocks). The Voting Ensemble outperformed all single models on F1 — but as documented in the per-ticker class-balance notes, F1 gains are partly attributable to the model biasing toward the UP majority class. Macro F1 paints a more conservative picture and is closer to balanced-accuracy levels around 0.49–0.50 for both tickers.
 
-The most important finding from the classification track is not the F1 number itself but **what the model's behavior reveals about the target**: per-fold analysis showed the SVM frequently collapsing to single-class predictions per 42-day window, and probability distributions for actual UP vs. actual DOWN days overlap almost entirely. This is consistent with daily equity direction being a noise-dominated signal that traditional ML on technical features cannot meaningfully separate. The features carry information — but not enough to push prediction beyond the ~52% boundary that decades of research have established for this problem.
+The central methodological finding from the classification track is the **F1 trap** and the workflow we developed to handle it. Grid search across every base model consistently surfaced configurations with inflated F1 driven by class bias rather than genuine classification ability. The three-way comparison workflow (baseline / best-F1 / balanced) made this trade-off explicit at every step, and ensemble components were chosen from the balanced side of that trade-off rather than the raw F1 winners. The voting threshold sensitivity analysis (≥2 vs ≥3 of 4) independently reproduced the same pattern at the ensemble level, confirming that F1 reflects class bias as much as classification skill on this target.
+
+The other important finding is **what the model's behavior reveals about the target**: per-fold analysis showed the SVM frequently collapsing to single-class predictions per 42-day window, and probability distributions for actual UP vs. actual DOWN days overlap almost entirely. This is consistent with daily equity direction being a noise-dominated signal that traditional ML on technical features cannot meaningfully separate. The features carry information — but not enough to push prediction beyond the ~52% boundary that decades of research have established for this problem.
 
 A breakthrough would require categorically different signal: sentiment data, options market data (implied volatility surfaces, put/call ratios), order flow, or macroeconomic factors. These were out of scope for this project given the timeline and the decision to limit inputs to what is available through the Yahoo Finance API and derived features.
 
