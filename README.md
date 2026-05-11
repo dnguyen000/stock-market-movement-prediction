@@ -214,29 +214,34 @@ Ensemble components follow the same three-way comparison workflow. For TSLA, thr
 |---|---|---|
 | SVM | C=10, γ=0.1 | Baseline (no grid F1 improvement over baseline) |
 | Logistic Regression | C=10, L1 | Best F1 |
-| Random Forest | n_est=200, depth=4, min_leaf=10, sqrt | Balanced |
+| Random Forest | n_est=500, depth=4, min_leaf=10, sqrt | Balanced |
 | XGBoost | n_est=100, depth=3, lr=0.01, subsample=1.0 | Balanced |
 
-##### Performance (tie → UP, ≥ 2 of 4)
+##### Tie-breaking sensitivity
 
-| Metric | Value |
-|---|---|
-| F1 (UP) | 0.545 ± 0.153 |
-| Accuracy | 0.502 ± 0.081 |
-| Precision (UP) | 0.532 |
-| Recall / Sensitivity (UP) | 0.653 |
-| Specificity (Recall DOWN) | 0.361 |
+As with SPY, we evaluated two tie-breaking rules for the 4-model majority vote:
 
-**Seasonal breakdown:**
+| Metric | Tie → UP (≥ 2 of 4) | Tie → DOWN (≥ 3 of 4) |
+|---|---|---|
+| Accuracy | 0.503 ± 0.083 | 0.491 ± 0.074 |
+| F1 (UP) | 0.541 ± 0.163 | 0.421 ± 0.191 |
+| Precision (UP) | 0.536 | 0.510 |
+| Recall (UP) | 0.652 | 0.434 |
+| Specificity (DOWN) | 0.365 | 0.579 |
+| Macro F1 | 0.49 | 0.49 |
+
+**Interpretation.** The same mirror-image pattern seen on SPY appears more pronounced on TSLA: switching the tie-breaking rule swings F1 by 0.12 (0.541 → 0.421) and inverts recall and specificity, while macro F1 stays at 0.49 in both cases. The larger F1 swing on TSLA (0.12 vs SPY's 0.10) reflects the weaker underlying signal — when actual classification ability is closer to chance, F1 moves more with the decision threshold because there is less real predictive capability to anchor it.
+
+**Seasonal breakdown (tie → UP):**
 
 | Season | n (test samples) | F1 (UP) |
 |---|---|---|
-| Spring | 613 | 0.534 |
-| Summer | 645 | 0.549 |
-| Fall | 630 | 0.608 |
-| Winter | 548 | 0.600 |
+| Spring | 613 | 0.538 |
+| Summer | 645 | 0.543 |
+| Fall | 630 | 0.610 |
+| Winter | 548 | 0.596 |
 
-> **Note on class balance.** TSLA shows the same asymmetric pattern as SPY but more pronounced: UP recall 0.653, DOWN recall 0.361. Per-fold analysis (visible in `svm_tsla.ipynb`) shows the SVM frequently collapses to predicting a single class for an entire 42-day test window — alternating between "predict UP for all 42 days" and "predict DOWN for all 42 days" depending on the training slice. Probability distributions for actual UP vs. actual DOWN days overlap almost entirely (mean P(UP) = 0.523 on UP days, 0.519 on DOWN days), indicating the model cannot reliably distinguish the two classes from the available technical features. The reported F1 reflects this bias and should not be read as evidence of balanced classification ability.
+> **Note on class balance.** TSLA shows the same asymmetric pattern as SPY but more pronounced: under the ≥ 2 rule, UP recall is 0.652 and DOWN recall (specificity) is 0.365. Per-fold analysis (visible in `svm_tsla.ipynb`) shows the SVM frequently collapses to predicting a single class for an entire 42-day test window — alternating between "predict UP for all 42 days" and "predict DOWN for all 42 days" depending on the training slice. Probability distributions for actual UP vs. actual DOWN days overlap almost entirely (mean P(UP) = 0.523 on UP days, 0.519 on DOWN days), indicating the model cannot reliably distinguish the two classes from the available technical features. The reported F1 reflects this bias and should not be read as evidence of balanced classification ability.
 
 ### Key Findings Across Classification Models
 
