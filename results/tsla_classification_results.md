@@ -83,27 +83,27 @@ Walk-forward config: 59d / 42d / 5d — 58 folds
 
 | Metric | Value |
 |---|---|
-| F1 | 0.473 ± 0.135 |
-| Accuracy | 0.483 ± 0.075 |
+| F1 | 0.491 ± 0.168 |
+| Accuracy | 0.496 ± 0.070 |
 
 ## High-Confidence Filter (Prob > 0.55)
 
 | Metric | Value |
 |---|---|
-| F1 | 0.501 |
-| Coverage | 802 samples |
+| Accuracy | 0.510 |
+| Coverage | 1025 samples |
 
 ## Grid Search (120 configs)
 
 | Rank | Config | F1 |
 |---|---|---|
-| 1 | depth=10, n=100, min_leaf=1 | 0.482 |
+| 1 | n=500, depth=None, min_leaf=20 | 0.495 |
 
 ## Key Takeaways
 
 - Modest improvement over Logistic Regression
-- Longer history does not improve performance (conflicting regimes dilute signal)
-- High-confidence subset crosses 0.50 F1 threshold
+- Shorter 59d window aligns with TSLA's regime instability — conflicting regimes in longer windows dilute signal
+- High-confidence subset (Prob > 0.55) achieves 51% accuracy across 1025 samples
 - Feature interactions exist but are inconsistent across regimes
 
 ---
@@ -174,7 +174,7 @@ Voting rule:
 |---|---|
 | SVM | C=10, γ=0.1 |
 | Logistic Regression | C=10, L1 |
-| Random Forest | n=200, depth=4, min_leaf=10 |
+| Random Forest | n=500, depth=4, min_leaf=10 |
 | XGBoost | n=100, depth=3, lr=0.01 |
 
 ---
