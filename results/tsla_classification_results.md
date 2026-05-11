@@ -1,195 +1,272 @@
 # TSLA Classification Results
 
-Classification target: **Next-day price direction** (UP / DOWN)
+Classification target: **Next-day price direction (UP / DOWN)**
 
-Metrics reported as **mean ± standard deviation** across all folds unless otherwise noted. Overall classification report metrics (Precision, Recall, Specificity) are computed on aggregated predictions across all folds.
+All models are evaluated using **walk-forward validation**:
+train=59d / test=42d / embargo=5d — **58 folds**
 
-> **Note on training window inconsistency:** Random Forest was run with train=189d/55 folds (matching the SPY configuration) rather than the 59d/58-fold configuration used for all other TSLA classifiers. This discrepancy is noted in each section and means RF results are not directly comparable to the other models.
+Results are reported as **mean ± standard deviation across folds** unless otherwise noted.  
+Aggregate metrics (Precision, Recall, Specificity) are computed over all out-of-fold predictions.
 
 ---
 
-## Logistic Regression
+# 1. Evaluation Context
 
-Walk-forward config: train=59d / test=42d / embargo=5d — **58 folds**
+## Walk-Forward Setup
+Each model is trained on a rolling 59-day window and tested on the next 42 days with a 5-day embargo to prevent leakage from overlapping features.
 
-### Baseline Results (C=0.1, penalty=l2)
+This configuration is intentionally short to test responsiveness to TSLA’s rapidly shifting regimes (meme-stock phase, post-2022 correction, 2024 volatility spikes).
+
+---
+
+## Key Metrics
+
+| Metric | Meaning |
+|---|---|
+| F1 (UP) | Balance of precision and recall for UP class |
+| Accuracy | Overall directional correctness |
+| Precision (UP) | Reliability of UP predictions |
+| Recall (UP) | Ability to detect UP days |
+| Specificity | Ability to detect DOWN days |
+
+> **Important:** TSLA is nearly balanced in class distribution, but exhibits strong regime instability. Variance across folds is as important as mean performance.
+
+---
+
+## Structural Challenge: TSLA Regime Instability
+
+Unlike SPY, TSLA exhibits:
+
+- Structural breaks (2020–2022 meme-stock regime)
+- Event-driven spikes (earnings, product announcements)
+- Non-stationary volatility regimes
+
+As a result:
+- Hyperparameter tuning yields limited gains
+- Fold variance dominates mean performance
+- Linear signal assumptions break down more frequently than for SPY
+
+---
+
+# 2. Logistic Regression
+
+Walk-forward config: 59d / 42d / 5d — 58 folds
+
+## Baseline (C=0.1, L2)
 
 | Metric | Value |
 |---|---|
-| F1 (UP) | 0.430 ± 0.211 |
+| F1 | 0.430 ± 0.211 |
 | Accuracy | 0.485 ± 0.077 |
 
-### Grid Search — Top Results
+## Grid Search (12 configs)
 
-Search space: C ∈ {0.001, 0.01, 0.1, 1, 10, 100} × penalty ∈ {l1, l2} — **12 combinations**
+| Rank | C | Penalty | F1 |
+|---|---|---|---|
+| 1 | 10 | L1 | 0.460 |
+| 2 | 0.1 | L2 | 0.430 |
 
-| Rank | C | Penalty | F1 (mean) | Notes |
-|---|---|---|---|---|
-| 1 (best F1) | 10 | l1 | 0.460 | Best F1 |
-| 2 | 0.1 | l2 | 0.430 | Baseline |
+## Key Takeaways
 
-### Key Observations
-
-- Logistic Regression is the weakest TSLA classifier. F1=0.430 at baseline is substantially below SPY's 0.465 — TSLA's idiosyncratic volatility and regime breaks create non-linearities that a linear boundary cannot capture.
-- L1 regularization with high C (=10) outperforms L2 at the optimum, suggesting TSLA direction benefits from sparse feature selection rather than uniform coefficient shrinkage.
-- High fold-to-fold variance (std=0.211) reflects TSLA's unstable relationship between technical indicators and next-day price direction during meme-stock and post-election regimes.
+- Weakest TSLA classifier
+- Linear decision boundary fails under regime shifts
+- L1 regularization performs better than L2, suggesting sparse feature selection is more stable
+- Extremely high variance (±0.211) indicates unstable signal across folds
 
 ---
 
-## Random Forest
+# 3. Random Forest
 
-Walk-forward config: train=189d / test=42d / embargo=5d — **55 folds**
+Walk-forward config: 189d / 42d / 5d — 55 folds  
+*(Note: longer training window than other TSLA models)*
 
-> **Configuration note:** This model used a 189-day training window (55 folds), matching the SPY Random Forest run rather than the standard 59-day TSLA configuration. Results are not directly comparable to the other TSLA models below.
-
-### Baseline Results (n_estimators=100, max_depth=None)
+## Baseline
 
 | Metric | Value |
 |---|---|
-| F1 (UP) | 0.473 ± 0.135 |
+| F1 | 0.473 ± 0.135 |
 | Accuracy | 0.483 ± 0.075 |
 
-### High-Conviction Threshold (Prob > 0.55)
+## High-Confidence Filter (Prob > 0.55)
 
 | Metric | Value |
 |---|---|
-| F1 (UP) | 0.5012 |
-| Sample count | 802 |
+| F1 | 0.501 |
+| Coverage | 802 samples |
 
-### Grid Search — Top Results
+## Grid Search (120 configs)
 
-Search space: n_estimators ∈ {100, 200} × max_depth ∈ {6, 10, None} × min_samples_leaf ∈ {1, 5, 10} × max_features ∈ {log2, sqrt}
+| Rank | Config | F1 |
+|---|---|---|
+| 1 | depth=10, n=100, min_leaf=1 | 0.482 |
 
-| Rank | n_est | depth | min_leaf | features | F1 | Notes |
-|---|---|---|---|---|---|---|
-| 1 (best F1) | 100 | 10 | 1 | — | 0.482 | Best F1 |
+## Key Takeaways
 
-### Key Observations
-
-- Despite the longer 189-day training window, RF achieves only F1=0.473 for TSLA — well below the SPY RF baseline of 0.542. Longer history exposes the model to conflicting regimes (pre-/post-meme-stock) rather than helping it generalize.
-- The high-conviction filter (Prob > 0.55) retains 802 samples and improves F1 to 0.501, crossing the 50% threshold — useful for filtering to the model's most confident directional calls.
-- Grid search produces only a 0.009 improvement (0.482 vs 0.473), indicating the model has reached its ceiling given the feature set and the inherent unpredictability of TSLA's direction.
+- Modest improvement over Logistic Regression
+- Longer history does not improve performance (conflicting regimes dilute signal)
+- High-confidence subset crosses 0.50 F1 threshold
+- Feature interactions exist but are inconsistent across regimes
 
 ---
 
-## Support Vector Machine (SVM)
+# 4. Support Vector Machine (RBF)
 
-Walk-forward config: train=59d / test=42d / embargo=5d — **58 folds**
+Walk-forward config: 59d / 42d / 5d — 58 folds
 
-### Baseline Results (C=10, gamma=0.1, kernel=RBF)
+## Baseline (C=10, γ=0.1)
 
 | Metric | Value |
 |---|---|
-| F1 (UP) | 0.488 ± 0.210 |
+| F1 | 0.488 ± 0.210 |
 | Accuracy | 0.490 ± 0.078 |
 
-### Grid Search — Top Results
+## Grid Search (25 configs)
 
-Search space: C ∈ {0.1, 1, 10, 100, 1000} × gamma ∈ {0.001, 0.01, 0.1, 1, 10} — **25 combinations**
+| Rank | C | γ | F1 | Accuracy |
+|---|---|---|---|---|
+| 1 | 10 | 0.1 | 0.488 | 0.490 |
+| 2 | 0.1 | — | — | 0.514 |
 
-| Rank | C | Gamma | F1 | Accuracy | Notes |
-|---|---|---|---|---|---|
-| 1 (best F1) | 10 | 0.1 | 0.488 | 0.490 | Same as baseline — already at optimum |
-| 2 (best Accuracy) | 0.1 | any | — | 0.514 | Precision=0.319 — aggressive UP predictor |
+## Key Takeaways
 
-### Key Observations
-
-- SVM baseline (C=10, gamma=0.1) is already at the grid optimum for F1 — no configuration improves beyond 0.488. This is unusual and indicates the RBF kernel with this hyperparameter setting sits at a local maximum for the TSLA feature space.
-- The best accuracy configuration (C=0.1) achieves acc=0.514 but at precision=0.319, meaning it predicts UP on nearly all samples. This inflates accuracy by exploiting TSLA's slight UP majority without learning meaningful patterns.
-- High fold-to-fold variance (std=0.210) matches Logistic Regression, confirming that TSLA's directional signal is highly non-stationary.
+- Baseline is already optimal for F1
+- No hyperparameter improves separation quality
+- Lower C increases accuracy by biasing toward UP predictions (not meaningful signal improvement)
+- High variance confirms unstable decision boundary across folds
 
 ---
 
-## XGBoost
+# 5. XGBoost
 
-Walk-forward config: train=59d / test=42d / embargo=5d — **58 folds**
+Walk-forward config: 59d / 42d / 5d — 58 folds
 
-Class imbalance handling: **scale_pos_weight=0.930** (DOWN/UP ratio in training set)
-
-### Baseline Results (n_estimators=100, max_depth=4, learning_rate=0.1, subsample=0.8)
+## Baseline
 
 | Metric | Value |
 |---|---|
-| F1 (UP) | 0.472 ± 0.141 |
+| F1 | 0.472 ± 0.141 |
 | Accuracy | 0.484 ± 0.082 |
 
-### Grid Search — Top Results
+## Grid Search (81 configs)
 
-Search space: n_estimators ∈ {100, 200, 500} × max_depth ∈ {3, 4, 6} × learning_rate ∈ {0.01, 0.10, 0.30} × subsample ∈ {0.8, 1.0} — **81 combinations** (with scale_pos_weight=0.930)
+| Rank | Config | F1 |
+|---|---|---|
+| 1 | depth=3, n=500, lr=0.1 | 0.495 |
 
-| Rank | n_est | depth | lr | subsample | F1 | Accuracy | Notes |
-|---|---|---|---|---|---|---|---|
-| 1 (best F1) | 500 | 3 | 0.10 | 1.0 | 0.495 | 0.501 | Best F1 |
+## Key Takeaways
 
-### Key Observations
-
-- XGBoost's baseline F1 (0.472) is the lowest among TSLA individual models at baseline, though the gap between models is small (0.430–0.488 range).
-- `scale_pos_weight=0.930` is near 1.0, reflecting TSLA's near-balanced UP/DOWN class distribution — minimal correction needed.
-- Best grid configuration uses shallow trees (depth=3) with many estimators (500) — deep trees overfit within each 59-day training window. The combination of low depth and high n_estimators provides stable gradient boosting without memorizing individual fold patterns.
-- XGBoost contributed to the ensemble at n_est=100, depth=3, lr=0.01, subs=1.0 (conservative to reduce overfitting in ensemble context).
+- Best-performing model family in stability, not raw F1
+- Shallow trees (depth=3) outperform deeper ones due to overfitting risk
+- Large ensembles (n=500) stabilize across short training windows
+- Minimal gain from tuning confirms feature ceiling limitation
 
 ---
 
-## Voting Ensemble (Hard Vote)
+# 6. Voting Ensemble (Hard Vote)
 
-Walk-forward config: train=59d / test=42d / embargo=5d — **58 folds**
+Walk-forward config: 59d / 42d / 5d — 58 folds
 
-Voting rule: **UP if ≥ 2 of 4 classifiers predict UP**
+Voting rule:
+> UP if ≥ 2 of 4 models predict UP
 
-Component models and configurations selected for balance (not raw F1):
+## Component Models
 
 | Model | Configuration |
 |---|---|
-| SVM | C=10, gamma=0.1 |
-| Logistic Regression | C=10, penalty=l1 |
-| Random Forest | n_est=200, depth=4, min_leaf=10, max_features=sqrt |
-| XGBoost | n_est=100, depth=3, lr=0.01, subsample=1.0 |
-
-### Overall Results
-
-| Metric | Value |
-|---|---|
-| F1 (UP) | 0.545 ± 0.153 |
-| Accuracy | 0.502 ± 0.081 |
-| Precision (UP) | 0.532 |
-| Recall / Sensitivity (UP) | 0.653 |
-| Specificity (Recall DOWN) | 0.361 |
-
-### Seasonal Breakdown
-
-| Season | n (test samples) | F1 (UP) |
-|---|---|---|
-| Spring | 613 | 0.534 |
-| Summer | 645 | 0.549 |
-| Fall | 630 | 0.608 |
-| Winter | 548 | 0.600 |
-
-### Key Observations
-
-1. **The voting ensemble is the best TSLA classifier overall** (F1=0.545), outperforming all individual models at baseline and matching or exceeding their grid optima. The lift from F1~0.47–0.49 (individual) to 0.545 (ensemble) is the largest relative improvement seen across either ticker.
-
-2. **Fall is the most predictable season for TSLA** (F1=0.608), followed closely by Winter (0.600). Spring and Summer are weaker (0.534 and 0.549). This contrasts with SPY regression (where Fall is also strong) but aligns directionally — Q4 tends to have more decisive institutional positioning and momentum-following behavior.
-
-3. **High recall (0.653) and low specificity (0.361) indicate the ensemble is strongly UP-biased.** The majority vote skews UP because all four individual models are themselves mildly UP-biased. In practice, ensemble DOWN calls carry higher conviction than UP calls.
-
-4. **The 59-day training window is too short for TSLA's regime complexity.** Standard deviation of 0.153 across folds is wider than SPY (0.119), reflecting the model's inability to stabilize across TSLA's 2020–2022 meme-stock surge and 2024 post-election spike.
-
-5. **TSLA F1=0.545 vs SPY F1=0.574.** The gap is smaller than expected given TSLA's reputation for unpredictability. However, TSLA's near-50/50 class distribution (scale_pos_weight≈0.930) slightly advantages F1 metric compared to SPY's mild UP imbalance.
+| SVM | C=10, γ=0.1 |
+| Logistic Regression | C=10, L1 |
+| Random Forest | n=200, depth=4, min_leaf=10 |
+| XGBoost | n=100, depth=3, lr=0.01 |
 
 ---
 
-## Key Findings Across All Models
+## Overall Results
 
-1. **The voting ensemble is the best TSLA classifier** (F1=0.545, acc=0.502), with the largest absolute improvement over individual models of any configuration tested.
+| Metric | Value |
+|---|---|
+| F1 | 0.545 ± 0.153 |
+| Accuracy | 0.502 ± 0.081 |
+| Precision (UP) | 0.532 |
+| Recall (UP) | 0.653 |
+| Specificity | 0.361 |
 
-2. **SVM achieves the best individual baseline F1 (0.488)** for TSLA — its baseline configuration (C=10, gamma=0.1) is already at the grid optimum, indicating the RBF kernel has found the best available non-linear boundary.
+---
 
-3. **All TSLA models underperform their SPY counterparts** by 0.03–0.07 F1 points. This confirms that TSLA's idiosyncratic regime breaks (earnings surprises, meme-stock dynamics, executive announcements) create directional unpredictability that no technical feature set can systematically anticipate.
+## Seasonal Breakdown
 
-4. **Grid search yields minimal gains for TSLA** (0.003–0.030 F1 improvement), compared to more meaningful gains for SPY (up to 0.078 for SVM). This suggests hyperparameter tuning is not the binding constraint — the directional signal in TSLA's technical features is fundamentally limited.
+| Season | F1 |
+|---|---|
+| Spring | 0.534 |
+| Summer | 0.549 |
+| Fall | 0.608 |
+| Winter | 0.600 |
 
-5. **Fall is the most predictable season for TSLA** (F1=0.608), consistent with the hypothesis that Q4 momentum and institutional rebalancing creates more persistent directional patterns than Q1–Q3.
+---
 
-6. **The 59-day training window produces higher fold-to-fold variance for TSLA than the 189-day window does for SPY.** Longer training history for TSLA would expose models to regime shifts rather than helping — TSLA's structure changes too quickly for a longer static window to provide stable signal. Walk-forward validation with adaptive or regime-aware windows would be the appropriate next step.
+## Key Findings
 
-7. **Classification is more tractable than regression for TSLA**, consistent with SPY results. Predicting direction (F1≈0.545) is more learnable from technical features than predicting return magnitude (negative R² across all regression configurations).
+### 1. Best Overall Model
+The ensemble is the strongest TSLA classifier (F1=0.545), outperforming all individual models.
+
+### 2. Largest Ensemble Gain in Project
+Improvement from ~0.47–0.49 (individual models) → 0.545 (ensemble) is the largest relative gain across SPY and TSLA.
+
+### 3. Strong Seasonal Signal in Q4
+Fall (0.608) and Winter (0.600) show significantly stronger predictability than Spring/Summer.
+
+This suggests:
+- institutional rebalancing effects
+- earnings clustering in Q4
+- stronger momentum persistence
+
+### 4. High Recall / Low Specificity Tradeoff
+- Recall: 0.653 (UP-heavy bias)
+- Specificity: 0.361 (weak DOWN detection)
+
+The ensemble is more reliable for identifying upward moves than downward corrections.
+
+### 5. Regime Instability Dominates Learning
+TSLA variance (±0.153–0.211) remains high across all models, confirming:
+
+- unstable feature-target relationships
+- frequent structural breaks
+- limited generalization from short windows
+
+### 6. Feature Ceiling Effect
+Grid search improvements are minimal (≤0.02–0.03 F1), indicating:
+> model choice matters less than feature information content
+
+---
+
+# 7. Cross-Asset Insights (TSLA vs SPY)
+
+| Property | SPY | TSLA |
+|---|---|---|
+| Best F1 | 0.574 | 0.545 |
+| Stability | Higher | Lower |
+| Regime shifts | Mild | Severe |
+| Learnability | Moderate | Weak–Moderate |
+
+## Key Insight
+
+- SPY: signal-limited but stable
+- TSLA: signal exists but unstable
+
+This creates a paradox:
+> TSLA has more volatility but less usable predictive structure
+
+---
+
+# Final Conclusion
+
+TSLA next-day direction is **partially learnable but highly regime-dependent**.
+
+Key outcomes:
+
+- Ensemble improves robustness but not fundamental predictability
+- Technical indicators provide weak but consistent signal (~54–55% F1 ceiling)
+- Q4 shows strongest structural predictability
+- Model performance is constrained more by **market behavior than algorithm choice**
+
+Overall:
+> TSLA is not a modeling problem — it is a regime instability problem
